@@ -1,0 +1,9 @@
+# Core dependencies
+torch
+torchvision
+numpy
+pandas
+matplotlib
+scikit-learn
+scipy
+opencv-python
