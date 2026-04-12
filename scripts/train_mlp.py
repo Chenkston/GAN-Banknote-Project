@@ -23,7 +23,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_dir = "data/raw/modified_dataset"
     batch_size = 64
-    epochs = 1000
+    epochs = 300
     latent_dim = 100
     img_size = (64, 64) # Using a smaller size for the MLP baseline to ensure stability and speed
     channels = 3
@@ -105,8 +105,6 @@ def main():
             
             # Use the trainer's step
             g_loss, d_loss = trainer.train_step(imgs)
-            g_loss2, _ = trainer.train_step(imgs)  # Train G again, bc it was losing out
-            g_loss = (g_loss + g_loss2) / 2
             
             g_loss_total += g_loss
             d_loss_total += d_loss
