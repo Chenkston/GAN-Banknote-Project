@@ -52,16 +52,16 @@ We evaluate the success of these attacks using Adversarial Success Rate (Fooling
 
 2.  **Train the Baseline (MLP GAN):**
     ```bash
-    python scripts/train_mlp.py
+    python -m scripts.train_mlp
     ```
 
 3.  **Train the Advanced Model (DCGAN Variant):**
     ```bash
-    python scripts/train_dcgan.py
+    python -m scripts.train_dcgan
     ```
 
 4.  **Evaluate Models:**
     ```bash
-    python scripts/evaluate.py
+    python -m scripts.evaluate
     ```
     This script will calculate the Fooling Rate against the target model and the FID scores. Use the notebooks for generating Grad-CAM heatmaps.
