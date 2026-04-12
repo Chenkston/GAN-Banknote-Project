@@ -5,6 +5,7 @@ Script to train the Architecture A: Multi-Layer Perceptron (MLP) GAN (Baseline).
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from torch.utils.data import TensorDataset
 import torchvision.transforms as transforms
 from torchvision.utils import save_image
 import os
@@ -14,19 +15,23 @@ from src.models.mlp_gan import MLPGenerator, MLPDiscriminator
 from src.training.trainer import GANTrainer
 from src.data.preprocess import denormalize_segments
 
+from concurrent.futures import ThreadPoolExecutor
+import threading
+
 def main():
     # 1. Configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_dir = "data"
+    data_dir = "data/raw/modified_dataset"
     batch_size = 64
-    epochs = 200
+    epochs = 1000
     latent_dim = 100
     img_size = (64, 64) # Using a smaller size for the MLP baseline to ensure stability and speed
     channels = 3
     img_shape = (6, channels, img_size[0], img_size[1])
     
     # Optimizers
-    lr = 0.0002
+    lr_G = 0.0002
+    lr_D = 0.0001
     b1 = 0.5
     b2 = 0.999
 
@@ -47,15 +52,35 @@ def main():
         print(f"Error: No data found in {data_dir}. Ensure 'real_notes' and 'fake_notes' folders exist.")
         return
 
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=2)
+    # Pre-load entire dataset onto GPU because I am bottlenecking on the CPU to GPU transfer
+    print("Pre-loading dataset onto GPU...")
+    all_imgs = [None] * len(dataset)
+    all_labels = [None] * len(dataset)
+
+    def load_sample(i):
+        imgs, label = dataset[i]
+        all_imgs[i] = imgs
+        all_labels[i] = label
+
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        list(executor.map(load_sample, range(len(dataset))))
+
+    print("Stacking and moving to GPU...")
+    all_imgs_tensor = torch.stack(all_imgs).to(device)
+    all_labels_tensor = torch.tensor(all_labels).to(device)
+    print(f"Dataset loaded onto GPU. Shape: {all_imgs_tensor.shape}")
+
+    # Create a simple GPU-based dataloader using TensorDataset
+    gpu_dataset = TensorDataset(all_imgs_tensor, all_labels_tensor)
+    dataloader = DataLoader(gpu_dataset, batch_size=batch_size, shuffle=True)
 
     # 3. Initialize Models
     generator = MLPGenerator(latent_dim=latent_dim, img_shape=img_shape).to(device)
     discriminator = MLPDiscriminator(img_shape=img_shape).to(device)
 
     # 4. Initialize Optimizers
-    optimizer_G = optim.Adam(generator.parameters(), lr=lr, betas=(b1, b2))
-    optimizer_D = optim.Adam(discriminator.parameters(), lr=lr, betas=(b1, b2))
+    optimizer_G = optim.Adam(generator.parameters(), lr=lr_G, betas=(b1, b2))
+    optimizer_D = optim.Adam(discriminator.parameters(), lr=lr_D, betas=(b1, b2))
 
     # 5. Initialize Trainer
     # Note: We do NOT use the TargetModel/Custom Loss for the baseline MLP GAN
@@ -80,6 +105,8 @@ def main():
             
             # Use the trainer's step
             g_loss, d_loss = trainer.train_step(imgs)
+            g_loss2, _ = trainer.train_step(imgs)  # Train G again, bc it was losing out
+            g_loss = (g_loss + g_loss2) / 2
             
             g_loss_total += g_loss
             d_loss_total += d_loss
@@ -92,6 +119,7 @@ def main():
 
         # Periodically save image samples
         if (epoch + 1) % 10 == 0:
+            generator.eval() 
             with torch.no_grad():
                 z = torch.randn(1, latent_dim, device=device)
                 gen_sample = generator(z).squeeze(0) # Get the 6 segments for one note (6, C, H, W)
@@ -101,6 +129,7 @@ def main():
                 
                 # Save as a grid of 6 images
                 save_image(gen_sample, f"outputs/mlp/samples/epoch_{epoch+1}.png", nrow=3)
+            generator.train()
 
         # Save checkpoints
         if (epoch + 1) % 50 == 0:
