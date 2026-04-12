@@ -9,7 +9,7 @@ class NoteShieldDataset(Dataset):
     Data loader for the NoteShieldBD (JaalTaka) dataset.
     Handles loading 6 individual segment images (.jpg) per banknote and stacking them into a tensor.
     """
-    def __init__(self, data_dir, transform=None):
+    def __init__(self, data_dir, transform=None, img_size=(64,64)):
         """
         Args:
             data_dir (str): Path to the directory containing the dataset.
@@ -28,6 +28,7 @@ class NoteShieldDataset(Dataset):
         """
         self.data_dir = data_dir
         self.transform = transform
+        self.img_size = img_size
         self.samples = []  # List of paths to note directories (e.g., .../real_notes/note_001)
         self.labels = []
         self.cache = {}    # Cache tensors to save from having to load 6 images every time
@@ -73,7 +74,7 @@ class NoteShieldDataset(Dataset):
             # Load image and convert to RGB (ensures 3 channels even if grayscale is present)
             img = Image.open(img_path).convert('RGB')
             # Resize images to 64 x 64, the input size for our custom models
-            img = img.resize((64, 64))
+            img = img.resize((self.img_size[0], self.img_size[1]))
             # Convert PIL Image to PyTorch tensor (C, H, W) with values in range [0.0, 1.0]
             img_tensor = TF.to_tensor(img)
             segments.append(img_tensor)

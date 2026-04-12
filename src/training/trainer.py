@@ -83,9 +83,9 @@ class GANTrainer:
         batch_size = real_imgs.size(0)
         
         # Ground truth labels (1 for real, 0 for fake)
-        # Using soft labels (0.9 instead of 1.0) for real images often helps GAN stability
+        # Using soft labels (0.9 instead of 1.0, 0.1 instead of 0.0) for real images often helps GAN stability
         valid = torch.full((batch_size, 1), 0.9, dtype=torch.float, device=self.device)
-        fake = torch.zeros((batch_size, 1), dtype=torch.float, device=self.device)
+        fake = torch.full((batch_size, 1), 0.1, dtype=torch.float, device=self.device)
 
         # Train Generator and get the generated images
         g_loss, gen_imgs = self._train_generator(batch_size)
