@@ -30,6 +30,7 @@ class NoteShieldDataset(Dataset):
         self.transform = transform
         self.samples = []  # List of paths to note directories (e.g., .../real_notes/note_001)
         self.labels = []
+        self.cache = {}    # Cache tensors to save from having to load 6 images every time
         
         # Expected class subdirectories mapping to labels
         # 0 for real (genuine), 1 for fake (counterfeit)
@@ -52,6 +53,10 @@ class NoteShieldDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
+        # Return cached result if available
+        if idx in self.cache:
+            return self.cache[idx]
+
         note_dir = self.samples[idx]
         label = self.labels[idx]
 
@@ -67,6 +72,8 @@ class NoteShieldDataset(Dataset):
             img_path = os.path.join(note_dir, img_file)
             # Load image and convert to RGB (ensures 3 channels even if grayscale is present)
             img = Image.open(img_path).convert('RGB')
+            # Resize images to 64 x 64, the input size for our custom models
+            img = img.resize((64, 64))
             # Convert PIL Image to PyTorch tensor (C, H, W) with values in range [0.0, 1.0]
             img_tensor = TF.to_tensor(img)
             segments.append(img_tensor)
@@ -78,4 +85,9 @@ class NoteShieldDataset(Dataset):
             # Note: Transform should be capable of handling (6, C, H, W) inputs
             segments_tensor = self.transform(segments_tensor)
 
-        return segments_tensor, label
+        result = (segments_tensor, label)
+    
+        # Store in cache before returning
+        self.cache[idx] = result
+
+        return result
