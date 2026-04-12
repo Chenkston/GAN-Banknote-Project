@@ -27,7 +27,22 @@ We evaluate the success of these attacks using Adversarial Success Rate (Fooling
 
 2.  **Install dependencies:**
     ```bash
+    pip install numpy==1.26.4
+    ```
+
+3.  **Install Torch (CUDA for Windows 10 with Nvidia GeForce RTX 2080):**
+    ```bash
+    pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
+    ```
+
+4.  **Install remaining dependencies:**
+    ```bash
     pip install -r requirements.txt
+    ```
+
+5. **Verify Installation:**
+    ```bash
+    python -c "import torch; import numpy; import cv2; print('torch, numpy, cv2 installed!'); print(torch.cuda.is_available())"
     ```
 
 ## Running the Project
