@@ -34,6 +34,8 @@ def main():
     lr_D = 0.0001
     b1 = 0.5
     b2 = 0.999
+    generator_steps = 2
+    discriminator_steps = 1
 
     print(f"Using device: {device}")
     os.makedirs("outputs/mlp/samples", exist_ok=True)
@@ -90,7 +92,9 @@ def main():
         discriminator=discriminator,
         g_optimizer=optimizer_G,
         d_optimizer=optimizer_D,
-        device=device
+        device=device,
+        generator_steps=generator_steps,
+        discriminator_steps=discriminator_steps,
     )
 
     # 6. Custom Training logic to save samples

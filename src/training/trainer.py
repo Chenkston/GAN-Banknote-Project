@@ -6,7 +6,18 @@ from tqdm import tqdm
 from src.training.losses import get_adversarial_loss, custom_adversarial_loss
 
 class GANTrainer:
-    def __init__(self, generator, discriminator, g_optimizer, d_optimizer, device, target_model=None, lambda_weight=0.1):
+    def __init__(
+        self,
+        generator,
+        discriminator,
+        g_optimizer,
+        d_optimizer,
+        device,
+        target_model=None,
+        lambda_weight=0.1,
+        generator_steps=1,
+        discriminator_steps=1,
+    ):
         """
         Initializes the GAN trainer.
         
@@ -18,6 +29,8 @@ class GANTrainer:
             device (torch.device): Device to run training on (CPU or CUDA).
             target_model (nn.Module, optional): The victim model for custom loss.
             lambda_weight (float): Weight for the custom target model loss.
+            generator_steps (int): Number of generator updates per batch.
+            discriminator_steps (int): Number of discriminator updates per batch.
         """
         self.generator = generator.to(device)
         self.discriminator = discriminator.to(device)
@@ -26,6 +39,10 @@ class GANTrainer:
         self.device = device
         self.target_model = target_model.to(device) if target_model else None
         self.lambda_weight = lambda_weight
+        self.generator_steps = int(generator_steps)
+        self.discriminator_steps = int(discriminator_steps)
+        if self.generator_steps < 1 or self.discriminator_steps < 1:
+            raise ValueError("generator_steps and discriminator_steps must both be >= 1.")
         
         self.adversarial_loss = get_adversarial_loss().to(device)
 
@@ -87,11 +104,20 @@ class GANTrainer:
         valid = torch.full((batch_size, 1), 0.9, dtype=torch.float, device=self.device)
         fake = torch.full((batch_size, 1), 0.1, dtype=torch.float, device=self.device)
 
-        # Train Generator and get the generated images
-        g_loss, gen_imgs = self._train_generator(batch_size)
-        
-        # Train Discriminator
-        d_loss = self._train_discriminator(real_imgs, gen_imgs, valid, fake)
+        d_loss_total = 0.0
+        for _ in range(self.discriminator_steps):
+            z = torch.randn(batch_size, self.generator.latent_dim, device=self.device)
+            with torch.no_grad():
+                gen_imgs = self.generator(z)
+            d_loss_total += self._train_discriminator(real_imgs, gen_imgs, valid, fake)
+
+        g_loss_total = 0.0
+        for _ in range(self.generator_steps):
+            g_loss, _ = self._train_generator(batch_size)
+            g_loss_total += g_loss
+
+        g_loss = g_loss_total / self.generator_steps
+        d_loss = d_loss_total / self.discriminator_steps
         
         return g_loss, d_loss
 
