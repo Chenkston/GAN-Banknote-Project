@@ -1,98 +1,92 @@
 """Evaluation metrics: Adversarial Success Rate (Fooling Rate), FID."""
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
-from torchvision.models import inception_v3
 import numpy as np
 from scipy.linalg import sqrtm
+from torchvision.models import inception_v3
+from torchvision.models import Inception_V3_Weights
 
-def calculate_fooling_rate(generator, target_model, num_rounds, batch_size=16):
+
+def calculate_fooling_rate(fake_notes, target_model, batch_size=64):
     """
-    Calculates the rate at which the generator model can fool the target model.
+    Calculates the rate at which fake notes fool the target model.
 
     Args:
-        generator (nn.module): The trained generator model that can output images
-        target_model (nn.module): A model that takes in images and classifies them as real or fake. Trained on the original dataset.
-        num_rounds (Int): The number of rounds for which to generate and evaluate images.
-        batch_size (Int): The number of images to generate per round. Higher batch size with less rounds may be more compuntationally efficient.
+        fake_notes (Tensor): (N, 6, C, H, W) tensor of generated notes on CPU.
+        target_model (nn.Module): Classifier trained to distinguish real/fake notes.
+        batch_size (int): Number of notes to evaluate per forward pass.
 
     Returns:
-        Float: The percentage of images generated that fooled the target model.
+        float: Fraction of generated notes that fooled the target model.
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    latent_dim = 100 # Should be the same as everywhere else
-    batch_size = batch_size # Function will generate num_rounds*batch_size images total
-
-    if num_rounds <= 0:
-        print(f'Can`t calculate fooling rate on {num_rounds*batch_size} images!')
-        return 0
-
-    # Set the models to eval mode, don't want any training
-    generator.eval()
+    device = next(target_model.parameters()).device
     target_model.eval()
 
-    total = 0
     fooled = 0
+    with torch.no_grad():
+        for start in range(0, len(fake_notes), batch_size):
+            batch = fake_notes[start : start + batch_size].to(device)  # (B, 6, C, H, W)
+            B, S, C, H, W = batch.shape
 
-    while total < num_rounds:
-        # Sample latent vector(s)
-        z = torch.randn(batch_size, latent_dim, device=device)
-        
-        # Generate image(s)
-        fake_images = generator(z)
-        
-        # Get predictions
-        preds = target_model(fake_images)
+            if (H, W) != (224, 224):
+                # This is for the MLP model - since it outputs 64x64 images (224x224 results in too many parameters)
+                batch = batch.view(B * S, C, H, W)
+                batch = torch.nn.functional.interpolate(batch, size=(224, 224), mode='bilinear', align_corners=False)
+                batch = batch.view(B, S, C, *(224,224))
 
-        preds = preds.bool()
+            preds = target_model(batch).bool()
+            fooled += preds.sum().item()
 
-        fooled += preds.sum().item()
-        total += batch_size
-    
-    return fooled/total
+    return fooled / len(fake_notes)
 
 
-
-# Code to calculate FID using inceptionv3 model for feature extraction
 
 class InceptionFeatureExtractor(nn.Module):
     """
     A class that implements the inceptionv3 CNN, a standard for evaluating
     generative image models. 
+
+    Features are a 2048-d vector.
     """
     def __init__(self, device):
         super().__init__()
-        self.model = inception_v3(pretrained=True, transform_input=False)
+        self.model = inception_v3(weights=Inception_V3_Weights.DEFAULT, transform_input=False)
         self.model.fc = nn.Identity()
         self.model.eval()
         self.model.to(device)
+        self.device = device
 
     def forward(self, x):
         with torch.no_grad(): # We never want to train this model
             # Resize to 299x299
             x = nn.functional.interpolate(x, size=(299, 299), mode='bilinear', align_corners=False)
-            
-            # Note: Inception expects values in [0,1]
+
             return self.model(x)
-    
-def get_activations(data_loader, model, device):
+
+
+def get_activations(imgs, model, batch_size=64):
     """
-    Extracts the feature vectors from images in the dataloader using the provided model.
+    Extract Inception feature vectors from a flat image tensor.
 
     Args:
-        data_loader (Dataloader): The data_loader for the set of images.
-        model (nn.Module): The model that extracts feature vectors.
-        device (torch.device): The device on which to run the model. 
+        imgs (Tensor): (N, C, H, W) float tensor, values in [-1, 1].
+        model (InceptionFeatureExtractor): Feature extractor.
+        batch_size (int): Batch size for inference. Lower if running out of memory.
+
+    Returns:
+        np.ndarray: (N, 2048) feature matrix.
     """
-    with torch.no_grad():
-        activations = []
-        
-        for batch in data_loader:
-            images = batch.to(device)
-            feats = model(images)
-            activations.append(feats.cpu().numpy())
-        
-        return np.concatenate(activations, axis=0)
+    activations = []
+    for start in range(0, len(imgs), batch_size):
+        batch = imgs[start : start + batch_size].to(model.device)
+        batch = (batch + 1) / 2  # [-1, 1] -> [0, 1]
+        feats = model(batch)
+        activations.append(feats.cpu().numpy())
+        del batch, feats
+        torch.cuda.empty_cache()
+
+    return np.concatenate(activations, axis=0)
+
 
 def compute_stats(activations):
     """
@@ -111,35 +105,29 @@ def compute_stats(activations):
     sigma = np.cov(activations, rowvar=False)
     return mu, sigma
 
-def calculate_fid(real_loader, fake_loader):
+
+def calculate_fid(real_imgs, fake_imgs, batch_size=64):
     """
-    Calculates the FID (Fréchet inception distance) to assess the quality
-    of the images generated by the GAN. This metric is roughly good for assessing how
-    "real" the generated images look to the human eye. A lower score is better.
+    Calculates FID between two sets of images.
 
     Args:
-        real_loader (Dataloader): Dataloader for the set of real images.
-        fake_loader (Dataloader): Dataloader for the set of generated images.
-                
+        real_imgs (Tensor): (N, C, H, W) flat tensor of real segments.
+        fake_imgs (Tensor): (N, C, H, W) flat tensor of generated segments.
+        batch_size (int): Batch size for Inception inference.
+
     Returns:
-        Float: The FID score of the model.
+        float: FID score. Lower is better.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     feature_model = InceptionFeatureExtractor(device)
 
-    real_acts = get_activations(real_loader, feature_model, device)
-    fake_acts = get_activations(fake_loader, feature_model, device)
+    real_acts = get_activations(real_imgs, feature_model, batch_size)
+    fake_acts = get_activations(fake_imgs, feature_model, batch_size)
 
     mu_r, sigma_r = compute_stats(real_acts)
     mu_f, sigma_f = compute_stats(fake_acts)
     
     diff = mu_r - mu_f
-    
-    # Product might be almost singular, if needed uncomment following code to add small epsilon:
-    # eps = 1e-6
-    # sigma_r += np.eye(sigma_r.shape[0]) * eps
-    # sigma_f += np.eye(sigma_f.shape[0]) * eps
 
     covmean, _ = sqrtm(sigma_r @ sigma_f, disp=False)
     

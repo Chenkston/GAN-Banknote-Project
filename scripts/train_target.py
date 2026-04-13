@@ -17,7 +17,7 @@ from src.models.target_model import TargetCNN
 def main():
     # 1. Configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_dir = "data"  # Path to dataset root
+    data_dir = "data/raw/modified_dataset"  # Path to dataset root
     batch_size = 16
     epochs = 20
     learning_rate = 1e-4
