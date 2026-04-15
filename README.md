@@ -65,3 +65,8 @@ We evaluate the success of these attacks using Adversarial Success Rate (Fooling
     python -m scripts.evaluate
     ```
     This script will calculate the Fooling Rate against the target model and the FID scores. Use the notebooks for generating Grad-CAM heatmaps.
+
+## Authors
+
+- Samuel Kravchenko – samuel.ray.k@gmail.com  
+- Peyton Belchetz – belchetz@student.ubc.ca
