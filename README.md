@@ -48,7 +48,7 @@ We evaluate the success of these attacks using Adversarial Success Rate (Fooling
 ## Running the Project
 
 1.  **Prepare the Data:**
-    Place the NoteShieldBD (JaalTaka) dataset into `data/raw/` and ensure it is preprocessed into the expected 6-segment tensor format `(6, H, W, C)` normalized to `[-1, 1]`.
+    Place the NoteShieldBD (JaalTaka) dataset into `data/raw/`, the training scripts will handle data pre-processing.
 
 2.  **Train the Baseline (MLP GAN):**
     ```bash
